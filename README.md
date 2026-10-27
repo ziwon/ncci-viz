@@ -47,8 +47,8 @@ Use `Space` to play or pause, the arrow keys to step, and `R` to reset. **Share 
 Use Node.js 24 and npm, matching the CI environment.
 
 ```sh
-git clone https://github.com/ziwon/ncci-viz.git
-cd ncci-viz
+git clone https://github.com/ziwon/nccl-viz.git
+cd nccl-viz
 npm ci
 npm run dev
 ```
