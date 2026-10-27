@@ -2,6 +2,8 @@
 
 An English-first, interactive collective communication explorer built with React, TypeScript, and Vite. Runs locally in the browser without GPUs or a backend.
 
+[Open NCCL Lab](https://nccl-viz.pages.dev)
+
 ```sh
 npm install
 npm run dev
@@ -45,6 +47,27 @@ npm run test:e2e
 ```
 
 The unit tests check collective results, bandwidth definitions, log parsing, and comparison eligibility. Chromium tests cover playback speeds, final-frame completion, reduced motion, JSON export, mobile navigation, and benchmark import interactions. The browser test runner starts a server on port 5173 or reuses the local development server.
+
+## Deployment
+
+Cloudflare Pages serves the production site at **https://nccl-viz.pages.dev** from the `main` branch of `ziwon/ncci-viz`.
+
+- Project: `nccl-viz`
+- Build command: `npm run check` (unit tests, TypeScript checks, and production build)
+- Output directory: `dist`
+- Build environment: `NODE_VERSION=24`
+
+GitHub Actions runs a clean install, unit tests, production build, and Chromium interaction tests on pushes to `main` and pull requests. Cloudflare's Git integration builds independently and publishes only after its own `npm run check` succeeds; it does not wait for the GitHub Actions browser tests. Branches receive preview deployments. No Cloudflare API token is stored in GitHub for this integration.
+
+For a manual deployment from an authenticated local checkout:
+
+```sh
+npm ci
+npx wrangler login
+npm run deploy
+```
+
+The `predeploy` script runs the unit tests and production build before uploading `dist`. Wrangler uses the current Git branch; deploy from `main` to update production. Local credentials and Wrangler state are excluded from version control.
 
 ## Model boundaries
 
