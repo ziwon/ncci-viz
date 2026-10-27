@@ -18,6 +18,19 @@ export interface Frame { phase: string; description: string; buffers: (Cell | nu
 export interface SimulationMetrics { duration: number; algbw: number; busbw: number | null; factor: number | null; totalBytes: number; }
 export const chunkColors = ['#b2e879', '#70c5d0', '#c3a1e5', '#e6ba75', '#7aa6e0', '#db94aa', '#a9c7b7', '#d4d384', '#8ed8bd', '#a6b3ea', '#d8a47c', '#b2c580', '#b7a3bf', '#88bbc4', '#c5ab8d', '#b2b6d2'];
 export const defaultConfig: Config = { operation: 'AllReduce', algorithm: 'Ring', ranks: 8, root: 0, sizeMiB: 32, reduction: 'Sum', bandwidth: 50, latency: 2 };
+export const MIN_RANKS = 2;
+export const MAX_RANKS = 16;
+export const MIN_SIZE_MIB = 4 / 1048576;
+export const MAX_SIZE_MIB = 1048576;
+export const isValidRanks = (ranks: number) => Number.isInteger(ranks) && ranks >= MIN_RANKS && ranks <= MAX_RANKS;
+export const isValidSizeMiB = (sizeMiB: number) => Number.isFinite(sizeMiB) && sizeMiB >= MIN_SIZE_MIB && sizeMiB <= MAX_SIZE_MIB;
+export function tensorLayout(config: Pick<Config, 'sizeMiB' | 'ranks'>) {
+  const requestedBytes = config.sizeMiB * 1048576;
+  const chunkCount = Math.ceil(requestedBytes / (4 * config.ranks));
+  const chunkBytes = chunkCount * 4;
+  const bytes = chunkBytes * config.ranks;
+  return { requestedBytes, bytes, paddingBytes: bytes - requestedBytes, chunkBytes, count: chunkCount * config.ranks, chunkCount };
+}
 export const isRooted = (op: Operation) => ['Broadcast', 'Reduce', 'Gather', 'Scatter'].includes(op);
 export const isReduction = (op: Operation) => ['AllReduce', 'Reduce', 'ReduceScatter'].includes(op);
 export const valueOf = (cell: Cell | null, reduction: Reduction): number | null => {
@@ -32,8 +45,7 @@ const one = (rank: number, chunk: number): Cell => ({ sources: [rank], values: [
 
 export function simulate(config: Config): Frame[] {
   const { operation: op, algorithm, ranks: n, root } = config;
-  const bytes = config.sizeMiB * 1024 * 1024;
-  const chunkBytes = bytes / n;
+  const { chunkBytes } = tensorLayout(config);
   let buffers: (Cell | null)[][] = Array.from({ length: n }, (_, r) => Array.from({ length: n }, (_, c) => {
     if (op === 'AllGather' || op === 'Gather') return r === c ? one(r, c) : null;
     if (op === 'AllToAll') return r === c ? { sources: [r], values: [(r + 1) * 100 + c] } : null;
@@ -104,7 +116,7 @@ export function simulate(config: Config): Frame[] {
 
 export function metrics(config: Config, frames = simulate(config)): SimulationMetrics {
   const n = config.ranks;
-  const bytes = config.sizeMiB * 1024 * 1024;
+  const { bytes } = tensorLayout(config);
   const duration = frames[frames.length - 1].timeUs;
   const factors: Record<Operation, number | null> = {
     AllReduce: 2 * (n - 1) / n,
@@ -120,7 +132,12 @@ export function metrics(config: Config, frames = simulate(config)): SimulationMe
   const algbw = bytes / (duration * 1000);
   return { duration, algbw, busbw: factor === null ? null : algbw * factor, factor, totalBytes: frames.flatMap(f => f.transfers).reduce((s, t) => s + t.bytes, 0) };
 }
-export function formatBytes(bytes: number) { return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(bytes % 1048576 ? 1 : 0)} MiB` : `${(bytes / 1024).toFixed(bytes % 1024 ? 1 : 0)} KiB`; }
+export function formatBytes(bytes: number) {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  const index = Math.min(units.length - 1, Math.max(0, Math.floor(Math.log2(Math.max(1, bytes)) / 10)));
+  const value = bytes / 1024 ** index;
+  return `${value.toFixed(Number.isInteger(value) ? 0 : 1)} ${units[index]}`;
+}
 export function formatTime(us: number) { return us >= 1000 ? `${(us / 1000).toFixed(2)} ms` : `${us.toFixed(1)} µs`; }
 export function parseConfig(search: string): Config {
   const p = new URLSearchParams(search);
@@ -128,9 +145,9 @@ export function parseConfig(search: string): Config {
   const operation = op && Object.hasOwn(operations, op) ? op : defaultConfig.operation;
   const alg = p.get('alg') as Algorithm;
   const algorithm = (operations[operation].algorithms as readonly string[]).includes(alg) ? alg : operations[operation].algorithms[0];
-  const ranks = [2, 4, 8, 16].includes(Number(p.get('n'))) ? Number(p.get('n')) : 8;
+  const ranks = isValidRanks(Number(p.get('n'))) ? Number(p.get('n')) : defaultConfig.ranks;
   const root = Math.min(ranks - 1, Math.max(0, Math.floor(Number(p.get('root')) || 0)));
-  const sizeMiB = [0.00390625, 0.0625, 1, 4, 16, 32, 64, 256].includes(Number(p.get('size'))) ? Number(p.get('size')) : 32;
+  const sizeMiB = isValidSizeMiB(Number(p.get('size'))) ? Number(p.get('size')) : defaultConfig.sizeMiB;
   const reduction = ['Sum', 'Average', 'Min', 'Max'].includes(p.get('red') || '') ? p.get('red') as Reduction : 'Sum';
   const bandwidth = [16, 32, 50, 100].includes(Number(p.get('bw'))) ? Number(p.get('bw')) : 50;
   return { operation, algorithm, ranks, root, sizeMiB, reduction, bandwidth, latency: bandwidth <= 32 ? 5 : 2 };
@@ -138,8 +155,9 @@ export function parseConfig(search: string): Config {
 
 export function codeFor(config: Config) {
   const op = { Sum: 'ncclSum', Average: 'ncclAvg', Min: 'ncclMin', Max: 'ncclMax' }[config.reduction];
-  const count = config.sizeMiB * 1048576 / 4;
-  const intro = `// One communicator, ${config.ranks} ranks · float32\n// Each rank calls this on its own CUDA stream.\nconst size_t count = ${count};\nconst size_t chunk = count / ${config.ranks};\n`;
+  const { count, chunkCount, paddingBytes, bytes } = tensorLayout(config);
+  const padding = paddingBytes > 0 ? `// Equal-partition model pads the requested size to ${bytes} bytes.\n` : '';
+  const intro = `// One communicator, ${config.ranks} ranks · float32\n// Each rank calls this on its own CUDA stream.\n${padding}const size_t count = ${count};\nconst size_t chunk = ${chunkCount};\n`;
   const calls: Record<Operation, string> = {
     AllReduce: `ncclAllReduce(sendbuf, recvbuf, count,\n              ncclFloat32, ${op}, comm, stream);`,
     Broadcast: `ncclBroadcast(sendbuf, recvbuf, count,\n              ncclFloat32, ${config.root}, comm, stream);`,

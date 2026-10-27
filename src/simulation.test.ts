@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { defaultConfig, operations, parseConfig, simulate, valueOf, metrics } from './simulation.ts';
+import { codeFor, defaultConfig, formatBytes, isValidRanks, isValidSizeMiB, MAX_SIZE_MIB, MIN_SIZE_MIB, operations, parseConfig, simulate, tensorLayout, valueOf, metrics } from './simulation.ts';
 import type { Config, Operation, Reduction } from './simulation.ts';
 
 const reductions: Reduction[] = ['Sum', 'Average', 'Min', 'Max'];
@@ -10,7 +10,7 @@ function expectedReduction(values: number[], reduction: Reduction) {
   const sum = values.reduce((a, b) => a + b, 0);
   return reduction === 'Average' ? sum / values.length : sum;
 }
-for (const n of [2, 4, 8, 16]) {
+for (const n of [2, 3, 4, 5, 8, 15, 16]) {
   for (const operation of Object.keys(operations) as Operation[]) {
     for (const algorithm of operations[operation].algorithms) {
       test(`${operation}/${algorithm}: ${n} ranks, all roots, all reductions`, () => {
@@ -79,11 +79,73 @@ test('Supported collectives retain their bus bandwidth correction factors', () =
 });
 test('Malformed URL values fall back to supported configuration', () => {
   for (const op of ['__proto__', 'constructor', 'invalid']) assert.equal(parseConfig(`?op=${op}`).operation, 'AllReduce');
-  const c = parseConfig('?op=Scatter&alg=Ring&n=7&root=999&size=-1&red=invalid&bw=0');
+  const c = parseConfig('?op=Scatter&alg=Ring&n=7.5&root=999&size=-1&red=invalid&bw=0');
   assert.equal(c.algorithm, 'Naive');
   assert.equal(c.ranks, 8);
   assert.equal(c.root, 7);
   assert.equal(c.sizeMiB, 32);
   assert.equal(c.reduction, 'Sum');
   assert.equal(c.bandwidth, 50);
+});
+
+test('Custom rank counts and tensor sizes survive URL parsing within model limits', () => {
+  for (let ranks = 2; ranks <= 16; ranks++) {
+    const parsed = parseConfig(`?n=${ranks}&size=12.375&root=15`);
+    assert.equal(parsed.ranks, ranks);
+    assert.equal(parsed.sizeMiB, 12.375);
+    assert.equal(parsed.root, ranks - 1);
+  }
+  for (const ranks of [0, 1, 17, 64, 2.5, NaN, Infinity]) {
+    assert.equal(isValidRanks(ranks), false);
+    assert.equal(parseConfig(`?n=${ranks}`).ranks, defaultConfig.ranks);
+  }
+  for (const size of [MIN_SIZE_MIB, MAX_SIZE_MIB, 0.1, 1024.5]) {
+    assert.equal(isValidSizeMiB(size), true);
+    assert.equal(parseConfig(`?size=${size}`).sizeMiB, size);
+  }
+  for (const size of [0, -1, MIN_SIZE_MIB / 2, MAX_SIZE_MIB + 1, NaN, Infinity]) {
+    assert.equal(isValidSizeMiB(size), false);
+    assert.equal(parseConfig(`?size=${size}`).sizeMiB, defaultConfig.sizeMiB);
+  }
+});
+
+test('Odd-rank tensors use the same whole-element padding in traffic, metrics, and code', () => {
+  const config = { ...defaultConfig, ranks: 3, sizeMiB: 1 };
+  const layout = tensorLayout(config);
+  assert.deepEqual(layout, { requestedBytes: 1048576, bytes: 1048584, paddingBytes: 8, chunkBytes: 349528, count: 262146, chunkCount: 87382 });
+  for (const operation of Object.keys(operations) as Operation[]) {
+    for (const algorithm of operations[operation].algorithms) {
+      const current = { ...config, operation, algorithm };
+      const frames = simulate(current);
+      const result = metrics(current, frames);
+      for (const transfer of frames.flatMap(frame => frame.transfers)) {
+        assert.equal(transfer.bytes, transfer.chunks.length * layout.chunkBytes);
+        assert.equal(transfer.bytes % 4, 0);
+      }
+      assert.equal(result.algbw, layout.bytes / (result.duration * 1000));
+      assert.match(codeFor(current), /const size_t count = 262146;/);
+      assert.match(codeFor(current), /const size_t chunk = 87382;/);
+      assert.match(codeFor(current), /pads the requested size to 1048584 bytes/);
+      const exported = JSON.parse(JSON.stringify({ config: current, tensor: layout, metrics: result, frames }));
+      assert.equal(exported.config.sizeMiB, 1);
+      assert.equal(exported.tensor.paddingBytes, 8);
+      assert.equal(exported.metrics.totalBytes, exported.frames.flatMap((frame: { transfers: { bytes: number }[] }) => frame.transfers).reduce((sum: number, transfer: { bytes: number }) => sum + transfer.bytes, 0));
+    }
+  }
+});
+
+test('Tensor padding preserves fractional requests and is idempotent for aligned sizes', () => {
+  const fractional = tensorLayout({ ranks: 3, sizeMiB: 4.5 / 1048576 });
+  assert.equal(fractional.requestedBytes, 4.5);
+  assert.equal(fractional.bytes, 12);
+  assert.equal(fractional.paddingBytes, 7.5);
+  const aligned = tensorLayout({ ranks: 3, sizeMiB: fractional.bytes / 1048576 });
+  assert.equal(aligned.bytes, fractional.bytes);
+  assert.equal(aligned.paddingBytes, 0);
+  assert.equal(tensorLayout(defaultConfig).paddingBytes, 0);
+});
+
+test('Byte formatting covers small values and large symbolic tensors', () => {
+  for (const [bytes, formatted] of [[4, '4 B'], [1024, '1 KiB'], [1048576, '1 MiB'], [1073741824, '1 GiB'], [1099511627776, '1 TiB']] as const) assert.equal(formatBytes(bytes), formatted);
+  assert.equal(formatBytes(1536), '1.5 KiB');
 });

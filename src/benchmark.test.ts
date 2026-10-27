@@ -115,7 +115,7 @@ test('Comparison requires confirmed matching metadata and a representable measur
   assert.equal(compareMeasurement(measurement, { ...context, confirmed: false }, defaultConfig).status, 'unavailable');
   assert.equal(compareMeasurement(measurement, { ...context, ranks: 4 }, defaultConfig).status, 'unavailable');
   assert.equal(compareMeasurement(measurement, { ...context, operation: 'Reduce' }, defaultConfig).status, 'unavailable');
-  assert.equal(compareMeasurement(measurement, { ...context, ranks: 3 }, { ...defaultConfig, ranks: 3 }).status, 'unavailable');
+  assert.equal(compareMeasurement(measurement, { ...context, ranks: 17 }, { ...defaultConfig, ranks: 17 }).status, 'unavailable');
   for (const patch of [{ dataType: 'half' }, { reduction: 'max' }, { wrong: 1 }, { sizeBytes: 4097 }]) {
     assert.equal(compareMeasurement({ ...measurement, ...patch }, context, defaultConfig).status, 'unavailable');
   }
@@ -127,6 +127,18 @@ test('Rooted comparisons require the same root', () => {
   const ctx = { ...context, operation: 'Broadcast' as const };
   assert.equal(compareMeasurement({ ...sample(), root: 0 }, ctx, cfg).status, 'unavailable');
   assert.equal(compareMeasurement({ ...sample(), root: 2 }, ctx, cfg).status, 'comparable');
+});
+
+test('Three-rank comparisons accept exact partitions and never pad measured sizes', () => {
+  const ctx = { ...context, ranks: 3 };
+  for (const algorithm of ['Ring', 'Tree', 'Naive'] as const) {
+    const model = { ...defaultConfig, ranks: 3, algorithm };
+    const aligned = compareMeasurement({ ...sample(), sizeBytes: 4092, count: 1023 }, ctx, model);
+    assert.equal(aligned.status, 'comparable');
+    const misaligned = compareMeasurement(sample(), ctx, model);
+    assert.equal(misaligned.status, 'unavailable');
+    if (misaligned.status === 'unavailable') assert.match(misaligned.reason, /Measured sizes are never padded/);
+  }
 });
 
 test('Uses the measured byte size and returns measured time divided by model time', () => {

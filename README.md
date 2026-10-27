@@ -13,9 +13,11 @@ Open the URL printed by Vite. `npm run build` produces `dist/`; `npm run preview
 
 - Eight collectives: AllReduce, Broadcast, Reduce, AllGather, ReduceScatter, AllToAll, Gather, Scatter.
 - Ring, single binomial tree, and direct baseline schedules, restricted to supported combinations.
-- 2–16 ranks, tensor sizes from 4 KiB to 256 MiB, root selection, sum/average/min/max reductions.
+- Numeric inputs for every integer from 2 to 16 GPUs, including 3 and 5. One GPU represents one rank.
+- Tensor sizes from 4 B to 1 TiB, entered in KiB, MiB, or GiB. Unit changes preserve the requested size. Invalid drafts retain the last valid simulation.
+- Root selection and sum/average/min/max reductions.
 - Step-by-step playback, timeline seeking, speed control, pan/zoom, keyboard controls (Space, arrows, R).
-- Inspect GPU buffers, contribution provenance, transfer logs, and C++ NCCL examples.
+- Inspect GPU buffers, contribution provenance, transfer logs, and C++ NCCL examples. Transfer logs show the current step by default, with an optional full history and a scrollable table with fixed headers.
 - Compare modeled completion times, algorithm bandwidth, and NCCL-tests bus bandwidth.
 - Import NCCL-tests console logs and compare reported timings with the selected model.
 - Share URL configurations or export complete simulation traces as JSON.
@@ -29,7 +31,7 @@ Open the URL printed by Vite. `npm run build` produces `dist/`; `npm run preview
 
 The importer accepts the standard 13-column console output with microsecond timing and decimal GB/s bandwidth. CPU-time, tuning, timestamp, and per-iteration extensions are not supported. Imports are limited to 1 MiB and 5,000 measurements. The table displays the first 100 measurements for the selected placement. Logs remain in the browser tab.
 
-The comparison uses each row's displayed byte size. It requires matching operation, rank count, float32 datatype, reduction, and root where applicable. Failed correctness checks and incompatible configurations remain visible without a comparison ratio. Missing validation counts are marked **Not checked**. Missing total-rank metadata must be entered explicitly; GPUs per process are not the total rank count.
+The comparison uses each row's displayed byte size. It requires matching operation, rank count, float32 datatype, reduction, and root where applicable. The measured size must divide into equal whole float32 partitions across ranks. Imported measurements are never padded. Failed correctness checks and incompatible configurations remain visible without a comparison ratio. Missing validation counts are marked **Not checked**. Missing total-rank metadata must be entered explicitly; GPUs per process are not the total rank count.
 
 **Measured / model** means imported duration divided by modeled duration. It is not a hardware speedup or an accuracy score. The measured algorithm is unknown unless independently established; the model algorithm remains a separate assumption. **Load synthetic example** provides invented values for exploring the interface, not benchmark evidence.
 
@@ -54,10 +56,13 @@ The single binomial tree is a pedagogical baseline, not NCCL's full double-tree 
 
 Tensor size means full logical buffer bytes: AllGather total output, ReduceScatter total input, AllToAll per-rank input, Gather root output, Scatter root input. Other operations use the per-rank tensor size. Scalar sample: `10 * (rank + 1) + chunk`; AllToAll uses `100 * (source + 1) + destination`.
 
+The educational model rounds requested tensor bytes up to a multiple of `4 × ranks` so every partition contains the same whole number of float32 elements. Any padding is displayed explicitly. Metrics, transfer payloads, and generated code use that effective size. JSON traces include both requested and effective sizes in `tensor`. This is a model simplification, not a general NCCL requirement. Visualization stays capped at 16 GPUs for readability; it is not a limit of NCCL.
+
 ## Source structure
 
 - `src/simulation.ts`: pure schedule generation, buffer state, cost model, URL configuration, and NCCL code examples.
 - `src/App.tsx`: simulator, topology, comparison, and collective reference views.
+- `src/ConfigInputs.tsx`: numeric GPU and tensor input drafts, validation feedback, and unit conversion.
 - `src/i18n.ts`: initial English message dictionary. Future locales can extend this structure; additional inline UI strings still need extraction before full localization.
 - `src/benchmark.ts`: NCCL-tests parser, measurement metadata, and comparison eligibility.
 - `src/BenchmarkPanel.tsx`: browser-local log import and measured/model comparison.

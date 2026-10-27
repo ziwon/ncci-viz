@@ -23,7 +23,7 @@ test('synthetic data requires confirmation, keeps placement separate, and reacts
   await expect(first).toContainText('1.24×');
   await page.getByLabel('Buffer placement', { exact: true }).selectOption('in-place');
   await expect(first).toContainText('33.0 µs');
-  await page.getByLabel('GPU count', { exact: true }).selectOption('4');
+  await page.getByLabel('GPU count', { exact: true }).fill('4');
   await expect(first).toContainText('rank count does not match');
   await expect(page.locator('.benchmark-table tbody tr')).toHaveCount(3);
 });

@@ -1,4 +1,4 @@
-import { isReduction, isRooted, metrics, operations } from './simulation.ts';
+import { isReduction, isRooted, isValidRanks, MAX_RANKS, MIN_RANKS, metrics, operations } from './simulation.ts';
 import type { Config, Operation } from './simulation.ts';
 
 export type Placement = 'out-of-place' | 'in-place';
@@ -158,14 +158,13 @@ export function compareMeasurement(row: Measurement, context: BenchmarkContext, 
   if (!context.confirmed) return unavailable('Confirm the benchmark operation and total rank count.');
   if (context.operation !== model.operation) return unavailable('The benchmark collective does not match the model.');
   if (context.ranks !== model.ranks) return unavailable('The benchmark rank count does not match the model.');
-  if (![2, 4, 8, 16].includes(context.ranks)) return unavailable('The model supports 2, 4, 8, or 16 ranks.');
+  if (!isValidRanks(context.ranks)) return unavailable(`The model supports integer rank counts from ${MIN_RANKS} to ${MAX_RANKS}.`);
   if (!['float', 'float32'].includes(row.dataType)) return unavailable('The model uses float32. This measurement uses a different datatype.');
   if (row.wrong !== null && row.wrong > 0) return unavailable('This measurement failed its correctness check.');
   if (isRooted(context.operation) && row.root !== model.root) return unavailable('The benchmark root rank does not match the model.');
   const reductionNames = { Sum: 'sum', Average: 'avg', Min: 'min', Max: 'max' } as const;
   if (isReduction(context.operation) && row.reduction !== reductionNames[model.reduction]) return unavailable('The benchmark reduction does not match the model.');
-  const partitioned = ['AllGather', 'ReduceScatter', 'AllToAll', 'Gather', 'Scatter'].includes(context.operation) || (context.operation === 'AllReduce' && model.algorithm === 'Ring');
-  if (row.sizeBytes % (4 * (partitioned ? context.ranks : 1)) !== 0) return unavailable('The logical buffer cannot be split into whole float32 elements for this model.');
+  if (row.sizeBytes % (4 * context.ranks) !== 0) return unavailable('This equal-partition model requires the measured buffer to split into whole float32 elements per rank. Measured sizes are never padded.');
   const modelTimeUs = metrics({ ...model, sizeMiB: row.sizeBytes / 1048576 }).duration;
   return { status: 'comparable', modelTimeUs, ratio: row.timeUs / modelTimeUs };
 }
