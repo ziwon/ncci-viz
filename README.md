@@ -1,100 +1,92 @@
 # NCCL Lab
 
-An English-first, interactive collective communication explorer built with React, TypeScript, and Vite. Runs locally in the browser without GPUs or a backend.
+See how data moves between GPUs, one collective step at a time.
 
-[Open NCCL Lab](https://nccl-viz.pages.dev)
+NCCL Lab visualizes collective communication with interactive Ring, Tree, and direct schedules. Explore rank buffers, follow individual transfers, and compare a communication model with imported `nccl-tests` results. Everything runs in your browser. No GPUs or CUDA installation required.
+
+**[Open the simulator](https://nccl-viz.pages.dev)** · [Try a four-GPU AllReduce](https://nccl-viz.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50) · [Model reference](docs/model.md)
+
+[![Four GPUs in a Ring AllReduce, paused at reduce-scatter step 2 of 6, with active transfers, a rank buffer inspector, and the playback timeline.](assets/readme/ring-allreduce.png)](https://nccl-viz.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50)
+
+*The simulator at step 2 of a four-rank Ring AllReduce. Values and timings come from the educational model.*
+
+## Follow your first collective
+
+1. Open the [four-GPU example](https://nccl-viz.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50) with a 32 MiB tensor.
+2. Press **Play**, or select a step on the timeline. Steps 1 to 3 reduce the partitions. Steps 4 to 6 distribute the reduced partitions to every rank.
+3. Select a GPU to inspect its buffer. Open **Transfer log** to see the routes, payloads, and scalar samples for that step.
+4. Change **Algorithm** to **Tree** or **Naive** and compare the schedule. Open **Compare algorithms** to inspect the modeled completion times.
+
+Use `Space` to play or pause, the arrow keys to step, and `R` to reset. **Share configuration** copies a reproducible setup link. **Export trace** downloads the configuration, metrics, and every simulation frame as JSON.
+
+## What you can explore
+
+- Enter any integer from 2 to 16 GPUs and tensor sizes from 4 B to 1 TiB. One GPU represents one rank.
+- Choose a root rank and Sum, Average, Min, or Max reductions where the collective supports them.
+- Inspect sample buffers, contribution provenance, transfer history, and illustrative C++ NCCL calls.
+- Compare modeled completion time, algorithm bandwidth, and bus bandwidth across the supported algorithms.
+- Upload or paste `nccl-tests` logs to compare measured times with the model. Logs stay in the browser tab.
+
+## Supported collectives
+
+| Collective | Algorithms | Result |
+| --- | --- | --- |
+| AllReduce | Ring, Tree, Naive | Reduce values and replicate the result on every rank. |
+| Broadcast | Tree, Naive | Copy the root's buffer to every rank. |
+| Reduce | Tree, Naive | Reduce values into the root's buffer. |
+| AllGather | Ring | Collect every rank's partition on every rank. |
+| ReduceScatter | Ring | Reduce values and give each rank one result partition. |
+| AllToAll | Naive | Exchange a distinct partition with each rank. |
+| Gather | Naive | Collect all partitions at the root. |
+| Scatter | Naive | Distribute the root's partitions across ranks. |
+
+`Naive` is the interface label for the direct baseline. `Tree` uses one binomial tree. These schedules explain the communication patterns used by NCCL.
+
+## Run locally
+
+Use Node.js 24 and npm, matching the CI environment.
 
 ```sh
-npm install
+git clone https://github.com/ziwon/ncci-viz.git
+cd ncci-viz
+npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite. `npm run build` produces `dist/`; `npm run preview` serves the production build. `npm test` validates collective output semantics.
+Open the URL printed by Vite. The development server binds to `0.0.0.0` for access from another device. The app uses React, TypeScript, and Vite.
 
-## Explore
-
-- Eight collectives: AllReduce, Broadcast, Reduce, AllGather, ReduceScatter, AllToAll, Gather, Scatter.
-- Ring, single binomial tree, and direct baseline schedules, restricted to supported combinations.
-- Numeric inputs for every integer from 2 to 16 GPUs, including 3 and 5. One GPU represents one rank.
-- Tensor sizes from 4 B to 1 TiB, entered in KiB, MiB, or GiB. Unit changes preserve the requested size. Invalid drafts retain the last valid simulation.
-- Root selection and sum/average/min/max reductions.
-- Step-by-step playback, timeline seeking, speed control, pan/zoom, keyboard controls (Space, arrows, R).
-- Inspect GPU buffers, contribution provenance, transfer logs, and C++ NCCL examples. Transfer logs show the current step by default, with an optional full history and a scrollable table with fixed headers.
-- Compare modeled completion times, algorithm bandwidth, and NCCL-tests bus bandwidth.
-- Import NCCL-tests console logs and compare reported timings with the selected model.
-- Share URL configurations or export complete simulation traces as JSON.
-
-## Compare an NCCL-tests run
-
-1. Open **Compare algorithms**, then **Import benchmark**.
-2. Upload a `.txt` or `.log` file, or paste one run with its column and unit headers.
-3. Set the measured collective and total rank count. Confirm both values before comparing.
-4. Select **Out-of-place** or **In-place** to inspect that placement's reported timings.
-
-The importer accepts the standard 13-column console output with microsecond timing and decimal GB/s bandwidth. CPU-time, tuning, timestamp, and per-iteration extensions are not supported. Imports are limited to 1 MiB and 5,000 measurements. The table displays the first 100 measurements for the selected placement. Logs remain in the browser tab.
-
-The comparison uses each row's displayed byte size. It requires matching operation, rank count, float32 datatype, reduction, and root where applicable. The measured size must divide into equal whole float32 partitions across ranks. Imported measurements are never padded. Failed correctness checks and incompatible configurations remain visible without a comparison ratio. Missing validation counts are marked **Not checked**. Missing total-rank metadata must be entered explicitly; GPUs per process are not the total rank count.
-
-**Measured / model** means imported duration divided by modeled duration. It is not a hardware speedup or an accuracy score. The measured algorithm is unknown unless independently established; the model algorithm remains a separate assumption. **Load synthetic example** provides invented values for exploring the interface, not benchmark evidence.
-
-## Run checks
+To run the checks and create a production build:
 
 ```sh
-npm test
-npm run build
-npx playwright install chromium
+npm run check
+npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-The unit tests check collective results, bandwidth definitions, log parsing, and comparison eligibility. Chromium tests cover playback speeds, final-frame completion, reduced motion, JSON export, mobile navigation, and benchmark import interactions. The browser test runner starts a server on port 5173 or reuses the local development server.
+`npm run build` writes the static site to `dist`. `npm run preview` serves that build locally.
 
-## Deployment
+## Understand the model's limits
 
-Cloudflare Pages serves the production site at **https://nccl-viz.pages.dev** from the `main` branch of `ziwon/ncci-viz`.
+NCCL Lab is an independent educational tool. It does not execute NCCL kernels or benchmark your hardware.
 
-- Project: `nccl-viz`
-- Build command: `npm run check` (unit tests, TypeScript checks, and production build)
-- Output directory: `dist`
-- Build environment: `NODE_VERSION=24`
+- The topology shows logical communication. It does not represent physical GPU wiring.
+- Timings use synchronous rounds with startup latency and a per-rank bandwidth budget. The model omits compute, pipelining, protocols, and hardware contention.
+- Link presets are illustrative. Tree schedules use a single binomial tree rather than NCCL's double-tree implementation.
+- The model pads requested sizes into equal float32 partitions and shows the added bytes. Imported benchmark measurements are never padded.
+- The 16-GPU cap keeps the visualization readable. It is not a limit of NCCL.
 
-GitHub Actions runs a clean install, unit tests, production build, and Chromium interaction tests on pushes to `main` and pull requests. Cloudflare's Git integration builds independently and publishes only after its own `npm run check` succeeds; it does not wait for the GitHub Actions browser tests. Branches receive preview deployments. No Cloudflare API token is stored in GitHub for this integration.
+Read the [model reference](docs/model.md) before interpreting timing or bandwidth comparisons.
 
-For a manual deployment from an authenticated local checkout:
+## Documentation
 
-```sh
-npm ci
-npx wrangler login
-npm run deploy
-```
-
-The `predeploy` script runs the unit tests and production build before uploading `dist`. Wrangler uses the current Git branch; deploy from `main` to update production. Local credentials and Wrangler state are excluded from version control.
-
-## Model boundaries
-
-This is an independent educational tool, not an NVIDIA product, NCCL runtime trace, or hardware benchmark. Logical topology is not physical wiring. Each data partition shows a deterministic scalar sample; tensor size sets communication volume, not allocation of a full tensor in the browser.
-
-The synchronous cost model sums startup latency plus the largest per-rank sent/received byte budget divided by one-direction link bandwidth. It assumes full-duplex links. It omits reduction compute, channels, protocols, pipelining, launch costs, congestion, and real hardware topology. Link presets are illustrative budgets, not device specifications.
-
-The single binomial tree is a pedagogical baseline, not NCCL's full double-tree implementation. Naive AllReduce/Reduce/Broadcast serialize direct full-buffer transfers. AllToAll uses cyclic pairwise rounds. Gather and Scatter use direct sequential transfers. Gather/Scatter bus bandwidth is intentionally not reported.
-
-Tensor size means full logical buffer bytes: AllGather total output, ReduceScatter total input, AllToAll per-rank input, Gather root output, Scatter root input. Other operations use the per-rank tensor size. Scalar sample: `10 * (rank + 1) + chunk`; AllToAll uses `100 * (source + 1) + destination`.
-
-The educational model rounds requested tensor bytes up to a multiple of `4 × ranks` so every partition contains the same whole number of float32 elements. Any padding is displayed explicitly. Metrics, transfer payloads, and generated code use that effective size. JSON traces include both requested and effective sizes in `tensor`. This is a model simplification, not a general NCCL requirement. Visualization stays capped at 16 GPUs for readability; it is not a limit of NCCL.
-
-## Source structure
-
-- `src/simulation.ts`: pure schedule generation, buffer state, cost model, URL configuration, and NCCL code examples.
-- `src/App.tsx`: simulator, topology, comparison, and collective reference views.
-- `src/ConfigInputs.tsx`: numeric GPU and tensor input drafts, validation feedback, and unit conversion.
-- `src/i18n.ts`: initial English message dictionary. Future locales can extend this structure; additional inline UI strings still need extraction before full localization.
-- `src/benchmark.ts`: NCCL-tests parser, measurement metadata, and comparison eligibility.
-- `src/BenchmarkPanel.tsx`: browser-local log import and measured/model comparison.
-- `src/styles.css`: responsive design and reduced-motion behavior.
-- `tests/`: Chromium interaction tests, configured in `playwright.config.ts`.
+- [Import and compare benchmarks](docs/benchmark-import.md) covers accepted logs, compatibility checks, and the measured/model ratio.
+- [Model reference](docs/model.md) defines tensor sizes, schedules, cost assumptions, and exported samples.
+- [Development and deployment](docs/development.md) covers the source map, test commands, and Cloudflare Pages setup.
 
 ## References
 
 - [NVIDIA NCCL collective operations](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html)
 - [NCCL-tests performance definitions](https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md)
 - [NCCL-tests console report format](https://github.com/NVIDIA/nccl-tests/blob/master/src/util.cu)
-- [gpu-comm-visualizer](https://github.com/devinjeon/gpu-comm-visualizer), the original inspiration. Implementation written independently.
+
+Inspired by [gpu-comm-visualizer](https://github.com/devinjeon/gpu-comm-visualizer). The implementation was written independently.
