@@ -15,6 +15,7 @@ export interface Config { operation: Operation; algorithm: Algorithm; ranks: num
 export interface Cell { sources: number[]; values: number[]; }
 export interface Transfer { from: number; to: number; chunks: number[]; reduce: boolean; bytes: number; values: number[]; }
 export interface Frame { phase: string; description: string; buffers: (Cell | null)[][]; transfers: Transfer[]; timeUs: number; }
+export interface SimulationMetrics { duration: number; algbw: number; busbw: number | null; factor: number | null; totalBytes: number; }
 export const chunkColors = ['#b2e879', '#70c5d0', '#c3a1e5', '#e6ba75', '#7aa6e0', '#db94aa', '#a9c7b7', '#d4d384', '#8ed8bd', '#a6b3ea', '#d8a47c', '#b2c580', '#b7a3bf', '#88bbc4', '#c5ab8d', '#b2b6d2'];
 export const defaultConfig: Config = { operation: 'AllReduce', algorithm: 'Ring', ranks: 8, root: 0, sizeMiB: 32, reduction: 'Sum', bandwidth: 50, latency: 2 };
 export const isRooted = (op: Operation) => ['Broadcast', 'Reduce', 'Gather', 'Scatter'].includes(op);
@@ -101,13 +102,23 @@ export function simulate(config: Config): Frame[] {
   return frames;
 }
 
-export function metrics(config: Config, frames = simulate(config)) {
+export function metrics(config: Config, frames = simulate(config)): SimulationMetrics {
   const n = config.ranks;
   const bytes = config.sizeMiB * 1024 * 1024;
   const duration = frames[frames.length - 1].timeUs;
-  const factor = config.operation === 'AllReduce' ? 2 * (n - 1) / n : ['AllGather', 'ReduceScatter', 'AllToAll'].includes(config.operation) ? (n - 1) / n : 1;
+  const factors: Record<Operation, number | null> = {
+    AllReduce: 2 * (n - 1) / n,
+    Broadcast: 1,
+    Reduce: 1,
+    AllGather: (n - 1) / n,
+    ReduceScatter: (n - 1) / n,
+    AllToAll: (n - 1) / n,
+    Gather: null,
+    Scatter: null,
+  };
+  const factor = factors[config.operation];
   const algbw = bytes / (duration * 1000);
-  return { duration, algbw, busbw: algbw * factor, factor, totalBytes: frames.flatMap(f => f.transfers).reduce((s, t) => s + t.bytes, 0) };
+  return { duration, algbw, busbw: factor === null ? null : algbw * factor, factor, totalBytes: frames.flatMap(f => f.transfers).reduce((s, t) => s + t.bytes, 0) };
 }
 export function formatBytes(bytes: number) { return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(bytes % 1048576 ? 1 : 0)} MiB` : `${(bytes / 1024).toFixed(bytes % 1024 ? 1 : 0)} KiB`; }
 export function formatTime(us: number) { return us >= 1000 ? `${(us / 1000).toFixed(2)} ms` : `${us.toFixed(1)} µs`; }

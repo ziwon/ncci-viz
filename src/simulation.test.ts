@@ -47,7 +47,35 @@ test('Ring AllReduce communication volume and latency match the analytic model',
   assert.equal(frames.length - 1, 14);
   assert.equal(m.totalBytes, 2 * 7 * bytes);
   assert.ok(Math.abs(m.duration - (14 * config.latency + 2 * 7 / 8 * bytes / (config.bandwidth * 1000))) < 1e-8);
+  assert.ok(m.busbw !== null);
   assert.ok(m.busbw < config.bandwidth);
+});
+test('Gather and Scatter preserve undefined bus bandwidth as null in exported JSON', () => {
+  for (const operation of ['Gather', 'Scatter'] as const) {
+    const result = metrics({ ...defaultConfig, operation, algorithm: 'Naive' });
+    assert.equal(result.busbw, null);
+    assert.equal(result.factor, null);
+    const exported = JSON.parse(JSON.stringify({ metrics: result }));
+    assert.equal(exported.metrics.busbw, null);
+    assert.equal(exported.metrics.factor, null);
+    assert.ok(Number.isFinite(exported.metrics.duration) && exported.metrics.duration > 0);
+    assert.ok(Number.isFinite(exported.metrics.algbw) && exported.metrics.algbw > 0);
+  }
+});
+test('Supported collectives retain their bus bandwidth correction factors', () => {
+  const cases = [
+    ['AllReduce', 'Ring', 1.5],
+    ['Broadcast', 'Tree', 1],
+    ['Reduce', 'Tree', 1],
+    ['AllGather', 'Ring', 0.75],
+    ['ReduceScatter', 'Ring', 0.75],
+    ['AllToAll', 'Naive', 0.75],
+  ] as const;
+  for (const [operation, algorithm, factor] of cases) {
+    const result = metrics({ ...defaultConfig, ranks: 4, operation, algorithm });
+    assert.equal(result.factor, factor);
+    assert.equal(result.busbw, result.algbw * factor);
+  }
 });
 test('Malformed URL values fall back to supported configuration', () => {
   for (const op of ['__proto__', 'constructor', 'invalid']) assert.equal(parseConfig(`?op=${op}`).operation, 'AllReduce');
