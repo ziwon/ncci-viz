@@ -19,11 +19,11 @@ Chromium tests cover playback, final-frame completion, numeric inputs, transfer 
 
 ## Deploy to Cloudflare Pages
 
-The production site is [nccl-viz.pages.dev](https://nccl-viz.pages.dev). The Pages project connects to the `main` branch of [ziwon/nccl-viz](https://github.com/ziwon/nccl-viz).
+The production site is [nccl-lab.pages.dev](https://nccl-lab.pages.dev). The Pages project connects to the `main` branch of [ziwon/nccl-lab](https://github.com/ziwon/nccl-lab).
 
 | Setting | Value |
 | --- | --- |
-| Project | `nccl-viz` |
+| Project | `nccl-lab` |
 | Build command | `npm run check` |
 | Output directory | `dist` |
 | Build environment | `NODE_VERSION=24` |

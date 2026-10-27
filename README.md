@@ -4,15 +4,15 @@ See how data moves between GPUs, one collective step at a time.
 
 NCCL Lab visualizes collective communication with interactive Ring, Tree, and direct schedules. Explore rank buffers, follow individual transfers, and compare a communication model with imported `nccl-tests` results. Everything runs in your browser. No GPUs or CUDA installation required.
 
-**[Open the simulator](https://nccl-viz.pages.dev)** · [Try a four-GPU AllReduce](https://nccl-viz.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50) · [Model reference](docs/model.md)
+**[Open the simulator](https://nccl-lab.pages.dev)** · [Try a four-GPU AllReduce](https://nccl-lab.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50) · [Model reference](docs/model.md)
 
-[![Four GPUs in a Ring AllReduce, paused at reduce-scatter step 2 of 6, with active transfers, a rank buffer inspector, and the playback timeline.](assets/readme/ring-allreduce.png)](https://nccl-viz.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50)
+[![Four GPUs in a Ring AllReduce, paused at reduce-scatter step 2 of 6, with active transfers, a rank buffer inspector, and the playback timeline.](assets/readme/ring-allreduce.png)](https://nccl-lab.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50)
 
 *The simulator at step 2 of a four-rank Ring AllReduce. Values and timings come from the educational model.*
 
 ## Follow your first collective
 
-1. Open the [four-GPU example](https://nccl-viz.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50) with a 32 MiB tensor.
+1. Open the [four-GPU example](https://nccl-lab.pages.dev/?op=AllReduce&alg=Ring&n=4&size=32&root=0&red=Sum&bw=50) with a 32 MiB tensor.
 2. Press **Play**, or select a step on the timeline. Steps 1 to 3 reduce the partitions. Steps 4 to 6 distribute the reduced partitions to every rank.
 3. Select a GPU to inspect its buffer. Open **Transfer log** to see the routes, payloads, and scalar samples for that step.
 4. Change **Algorithm** to **Tree** or **Naive** and compare the schedule. Open **Compare algorithms** to inspect the modeled completion times.
@@ -47,8 +47,8 @@ Use `Space` to play or pause, the arrow keys to step, and `R` to reset. **Share 
 Use Node.js 24 and npm, matching the CI environment.
 
 ```sh
-git clone https://github.com/ziwon/nccl-viz.git
-cd nccl-viz
+git clone https://github.com/ziwon/nccl-lab.git
+cd nccl-lab
 npm ci
 npm run dev
 ```

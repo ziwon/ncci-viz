@@ -11,7 +11,7 @@
     "test:e2e": "playwright test",
     "check": "npm test && npm run build",
     "predeploy": "npm run check",
-    "deploy": "wrangler pages deploy dist --project-name=nccl-viz"
+    "deploy": "wrangler pages deploy dist --project-name=nccl-lab"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
